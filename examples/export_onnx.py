@@ -7,16 +7,18 @@ import torch
 project_root = Path(__file__).resolve().parent.parent
 sys.path.append(str(project_root))
 
-from yolo.config.config import Config
-from yolo.model.yolo import create_model
-from yolo.utils.logging_utils import custom_logger
-from yolo.utils.bounding_box_utils import AnchorBoxConverter
-import torch.onnx
 import onnx
 import onnxsim
+import torch.onnx
+from torch import nn
+
+from yolo.config.config import Config
+from yolo.model.yolo import create_model
+from yolo.utils.bounding_box_utils import AnchorBoxConverter
+from yolo.utils.logging_utils import custom_logger
 
 
-class YOLOv9WithPostprocess(torch.nn.Module):
+class YOLOv9WithPostprocess(nn.Module):
     def __init__(self, cfg: Config):
         super(YOLOv9WithPostprocess, self).__init__()
         self.device = torch.device(cfg.device)
@@ -53,9 +55,7 @@ def main(cfg: Config):
     )
 
     onnx_model = onnx.load(model_name)
-    model_simp, check = onnxsim.simplify(
-        onnx_model
-    )
+    model_simp, check = onnxsim.simplify(onnx_model)
     assert check, "Simplified ONNX model could not be validated"
     onnx.save(model_simp, simp_model_name)
 
