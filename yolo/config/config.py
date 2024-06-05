@@ -106,8 +106,8 @@ class TrainConfig:
 
 @dataclass
 class NMSConfig:
-    min_confidence: int
-    min_iou: int
+    min_confidence: float
+    min_iou: float
 
 
 @dataclass
