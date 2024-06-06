@@ -23,7 +23,7 @@ class YOLOv9WithPostprocess(nn.Module):
         super(YOLOv9WithPostprocess, self).__init__()
         self.device = torch.device(cfg.device)
         self.model = create_model(cfg).to(self.device)
-        self.anchor2box = AnchorBoxConverter(cfg, self.device)
+        self.anchor2box = AnchorBoxConverter(cfg.model, cfg.image_size, self.device)
 
     def forward(self, tensor: torch.Tensor):
         raw_output = self.model(tensor)
