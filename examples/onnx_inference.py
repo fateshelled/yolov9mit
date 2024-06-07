@@ -118,14 +118,15 @@ def create_session(onnx_model_path: str, use_tensorrt=False) -> ort.InferenceSes
         onnx_model_path, sess_options=session_option, providers=providers
     )
 
-    input = onnx_session.get_inputs()[0]
     output = onnx_session.get_outputs()[0]
 
     print("==== Model Info ====")
     print(f"Inputs:")
-    print(f" - {input.name}, {input.shape}, {input.type}")
+    for input in onnx_session.get_inputs():
+        print(f" - {input.name}, {input.shape}, {input.type}")
     print(f"Outputs:")
-    print(f" - {output.name}, {output.shape}, {output.type}")
+    for output in onnx_session.get_outputs():
+        print(f" - {output.name}, {output.shape}, {output.type}")
     print()
     return onnx_session
 
@@ -149,10 +150,9 @@ def preprocess(image_bgr: np.ndarray, input_shape: tuple[int, int]):
 def inference(onnx_session: ort.InferenceSession, blob: np.array):
     input = onnx_session.get_inputs()[0]
     input_name = input.name
-    output = onnx_session.get_outputs()[0]
-    output_name = output.name
+    output_names = [output.name for output in onnx_session.get_outputs()]
 
-    outputs = onnx_session.run([output_name], {input_name: blob})[0]
+    outputs = onnx_session.run(output_names, {input_name: blob})
     return outputs
 
 
@@ -204,10 +204,10 @@ def calc_nms(bboxes, cls_ids, confs, min_iou: float, class_num=80):
 
 
 def postprocess(
-    outputs: np.ndarray, min_confidence: float, min_iou: float, class_num=80
+    outputs: list[np.ndarray], min_confidence: float, min_iou: float, class_num=80
 ):
-    cls_dist = outputs[:, :, :class_num]
-    bbox = outputs[:, :, class_num:]
+    cls_dist = outputs[0]
+    bbox = outputs[1]
 
     cls_val = cls_dist.max(axis=-1, keepdims=True)
     cls_idx = np.argmax(cls_dist, axis=-1, keepdims=True)

@@ -157,9 +157,10 @@ class AnchorBoxConverter:
         pred_maxXY = self.anchors + rb
         preds_box = torch.cat([pred_minXY, pred_maxXY], dim=-1)
 
-        predicts = torch.cat([preds_cls, preds_box], dim=-1)
+        # predicts = torch.cat([preds_cls, preds_box], dim=-1)
+        # return predicts, preds_anc
 
-        return predicts, preds_anc
+        return preds_cls, preds_box, preds_anc
 
 
 class BoxMatcher:

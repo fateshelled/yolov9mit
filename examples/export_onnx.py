@@ -27,8 +27,9 @@ class YOLOv9WithPostprocess(nn.Module):
 
     def forward(self, tensor: torch.Tensor):
         raw_output = self.model(tensor)
-        predict, _ = self.anchor2box(raw_output[0][3:], with_logits=True)
-        return predict
+        # predict, _ = self.anchor2box(raw_output[0][3:], with_logits=True)
+        preds_cls, preds_box, _ = self.anchor2box(raw_output[0][3:], with_logits=True)
+        return preds_cls, preds_box
 
 
 @hydra.main(config_path="../yolo/config", config_name="config", version_base=None)
@@ -51,7 +52,7 @@ def main(cfg: Config):
         opset_version=opset_version,
         do_constant_folding=True,
         input_names=["input"],
-        output_names=["output"],
+        output_names=["classes", "bbox_xyxy"],
     )
 
     onnx_model = onnx.load(model_name)
