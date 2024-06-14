@@ -1,6 +1,12 @@
-from typing import Any, Dict, Type
+import os
+from typing import List, Type, Union
 
 import torch
+import torch.distributed as dist
+from loguru import logger
+from omegaconf import ListConfig
+from torch import nn
+from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LambdaLR, SequentialLR, _LRScheduler
 
@@ -67,3 +73,23 @@ def create_scheduler(optimizer: Optimizer, schedule_cfg: SchedulerConfig) -> _LR
         warmup_schedule = LambdaLR(optimizer, lr_lambda=[lambda1, lambda2, lambda1])
         schedule = SequentialLR(optimizer, schedulers=[warmup_schedule, schedule], milestones=[2])
     return schedule
+
+
+def initialize_distributed() -> None:
+    rank = int(os.getenv("RANK", "0"))
+    local_rank = int(os.getenv("LOCAL_RANK", "0"))
+    world_size = int(os.getenv("WORLD_SIZE", "1"))
+
+    torch.cuda.set_device(local_rank)
+    dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
+    logger.info(f"Initialized process group; rank: {rank}, size: {world_size}")
+    return local_rank
+
+
+def get_device(device_spec: Union[str, int, List[int]]) -> torch.device:
+    ddp_flag = False
+    if isinstance(device_spec, (list, ListConfig)):
+        ddp_flag = True
+        device_spec = initialize_distributed()
+    device = torch.device(device_spec)
+    return device, ddp_flag

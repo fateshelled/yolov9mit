@@ -2,10 +2,12 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import torch
 import torch.nn.functional as F
+from einops import rearrange
 from loguru import logger
 from torch import Tensor, nn
 from torch.nn.common_types import _size_2_t
 
+from yolo.utils.bounding_box_utils import generate_anchors
 from yolo.utils.module_utils import auto_pad, create_activation_function, round_up
 
 
@@ -56,8 +58,7 @@ class Detection(nn.Module):
         anchor_channels = 4 * reg_max
 
         first_neck, in_channels = in_channels
-        # TODO: round up head[0] channels or each head?
-        anchor_neck = max(round_up(first_neck // 4, groups), anchor_channels, 16)
+        anchor_neck = max(round_up(first_neck // 4, groups), anchor_channels, reg_max)
         class_neck = max(first_neck, min(num_classes * 2, 128))
 
         self.anchor_conv = nn.Sequential(
@@ -69,13 +70,16 @@ class Detection(nn.Module):
             Conv(in_channels, class_neck, 3), Conv(class_neck, class_neck, 3), nn.Conv2d(class_neck, num_classes, 1)
         )
 
+        self.anc2vec = Anchor2Vec(reg_max=reg_max)
+
         self.anchor_conv[-1].bias.data.fill_(1.0)
         self.class_conv[-1].bias.data.fill_(-10)
 
-    def forward(self, x: List[Tensor]) -> List[Tensor]:
+    def forward(self, x: Tensor) -> Tuple[Tensor]:
         anchor_x = self.anchor_conv(x)
         class_x = self.class_conv(x)
-        return torch.cat([anchor_x, class_x], dim=1)
+        anchor_x, vector_x = self.anc2vec(anchor_x)
+        return class_x, anchor_x, vector_x
 
 
 class MultiheadDetection(nn.Module):
@@ -83,16 +87,26 @@ class MultiheadDetection(nn.Module):
 
     def __init__(self, in_channels: List[int], num_classes: int, **head_kwargs):
         super().__init__()
-        # TODO: Refactor these parts
         self.heads = nn.ModuleList(
-            [
-                Detection((in_channels[3 * (idx // 3)], in_channel), num_classes, **head_kwargs)
-                for idx, in_channel in enumerate(in_channels)
-            ]
+            [Detection((in_channels[0], in_channel), num_classes, **head_kwargs) for in_channel in in_channels]
         )
 
     def forward(self, x_list: List[torch.Tensor]) -> List[torch.Tensor]:
         return [head(x) for x, head in zip(x_list, self.heads)]
+
+
+class Anchor2Vec(nn.Module):
+    def __init__(self, reg_max: int = 16) -> None:
+        super().__init__()
+        reverse_reg = torch.arange(reg_max, dtype=torch.float32).view(1, reg_max, 1, 1, 1)
+        self.anc2vec = nn.Conv3d(in_channels=reg_max, out_channels=1, kernel_size=1, bias=False)
+        self.anc2vec.weight = nn.Parameter(reverse_reg, requires_grad=False)
+
+    def forward(self, anchor_x: Tensor) -> Tensor:
+        anchor_x = rearrange(anchor_x, "B (P R) h w -> B R P h w", P=4)
+        vector_x = anchor_x.softmax(dim=1)
+        vector_x = self.anc2vec(vector_x).squeeze(1)
+        return anchor_x, vector_x
 
 
 # ----------- Backbone Class ----------- #
@@ -178,6 +192,36 @@ class RepNCSP(nn.Module):
         return self.conv3(torch.cat((x1, x2), dim=1))
 
 
+class ELAN(nn.Module):
+    """ELAN  structure."""
+
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        part_channels: int,
+        *,
+        process_channels: Optional[int] = None,
+        **kwargs,
+    ):
+        super().__init__()
+
+        if process_channels is None:
+            process_channels = part_channels // 2
+
+        self.conv1 = Conv(in_channels, part_channels, 1, **kwargs)
+        self.conv2 = Conv(part_channels // 2, process_channels, 3, padding=1, **kwargs)
+        self.conv3 = Conv(process_channels, process_channels, 3, padding=1, **kwargs)
+        self.conv4 = Conv(part_channels + 2 * process_channels, out_channels, 1, **kwargs)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x1, x2 = self.conv1(x).chunk(2, 1)
+        x3 = self.conv2(x2)
+        x4 = self.conv3(x3)
+        x5 = self.conv4(torch.cat([x1, x2, x3, x4], dim=1))
+        return x5
+
+
 class RepNCSPELAN(nn.Module):
     """RepNCSPELAN block combining RepNCSP blocks with ELAN structure."""
 
@@ -214,6 +258,21 @@ class RepNCSPELAN(nn.Module):
         x4 = self.conv3(x3)
         x5 = self.conv4(torch.cat([x1, x2, x3, x4], dim=1))
         return x5
+
+
+class AConv(nn.Module):
+    """Downsampling module combining average and max pooling with convolution for feature reduction."""
+
+    def __init__(self, in_channels: int, out_channels: int):
+        super().__init__()
+        mid_layer = {"kernel_size": 3, "stride": 2}
+        self.avg_pool = Pool("avg", kernel_size=2, stride=1)
+        self.conv = Conv(in_channels, out_channels, **mid_layer)
+
+    def forward(self, x: Tensor) -> Tensor:
+        x = self.avg_pool(x)
+        x = self.conv(x)
+        return x
 
 
 class ADown(nn.Module):
@@ -482,26 +541,6 @@ class CSPDark(nn.Module):
         y = list(self.cv1(x).chunk(2, 1))
 
         return self.cv2(torch.cat((self.cb(y[0]), y[1]), 1))
-
-
-# ELAN
-class ELAN(nn.Module):
-    # ELAN
-    def __init__(self, in_channels, out_channels, med_channels, elan_repeat=2, cb_repeat=2, ratio=1.0):
-
-        super().__init__()
-
-        h_channels = med_channels // 2
-        self.cv1 = Conv(in_channels, med_channels, 1, 1)
-        self.cb = nn.ModuleList(ConvBlock(h_channels, repeat=cb_repeat, ratio=ratio) for _ in range(elan_repeat))
-        self.cv2 = Conv((2 + elan_repeat) * h_channels, out_channels, 1, 1)
-
-    def forward(self, x):
-
-        y = list(self.cv1(x).chunk(2, 1))
-        y.extend((m(y[-1])) for m in self.cb)
-
-        return self.cv2(torch.cat(y, 1))
 
 
 class CSPELAN(nn.Module):

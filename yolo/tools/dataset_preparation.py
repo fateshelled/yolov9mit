@@ -52,7 +52,7 @@ def check_files(directory, expected_count=None):
     return len(files) == expected_count if expected_count is not None else bool(files)
 
 
-def prepare_dataset(dataset_cfg: DatasetConfig):
+def prepare_dataset(dataset_cfg: DatasetConfig, task: str):
     """
     Prepares dataset by downloading and unzipping if necessary.
     """
@@ -60,8 +60,8 @@ def prepare_dataset(dataset_cfg: DatasetConfig):
     for data_type, settings in dataset_cfg.auto_download.items():
         base_url = settings["base_url"]
         for dataset_type, dataset_args in settings.items():
-            if dataset_type == "base_url":
-                continue  # Skip the base_url entry
+            if dataset_type != "annotations" and dataset_cfg.get(task, task) != dataset_type:
+                continue
             file_name = f"{dataset_args.get('file_name', dataset_type)}.zip"
             url = f"{base_url}{file_name}"
             local_zip_path = os.path.join(data_dir, file_name)
@@ -81,11 +81,11 @@ def prepare_dataset(dataset_cfg: DatasetConfig):
                 logger.error(f"Error verifying the {dataset_type} dataset after extraction.")
 
 
-def prepare_weight(downlaod_link: Optional[str] = None, weight_path: str = "v9-c.pt"):
+def prepare_weight(download_link: Optional[str] = None, weight_path: str = "v9-c.pt"):
     weight_name = os.path.basename(weight_path)
-    if downlaod_link is None:
-        downlaod_link = "https://github.com/WongKinYiu/yolov9mit/releases/download/v1.0-alpha/"
-    weight_link = f"{downlaod_link}{weight_name}"
+    if download_link is None:
+        download_link = "https://github.com/WongKinYiu/yolov9mit/releases/download/v1.0-alpha/"
+    weight_link = f"{download_link}{weight_name}"
 
     if not os.path.isdir(os.path.dirname(weight_path)):
         os.makedirs(os.path.dirname(weight_path))

@@ -25,7 +25,6 @@ class BlockConfig:
 @dataclass
 class ModelConfig:
     anchor: AnchorConfig
-    class_num: int
     model: Dict[str, BlockConfig]
 
 
@@ -108,6 +107,7 @@ class InferenceConfig:
     nms: NMSConfig
     data: DataConfig
     fast_inference: Optional[None]
+    save_predict: bool
 
 
 @dataclass

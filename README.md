@@ -1,9 +1,9 @@
-# YOLO: Official Implementation of YOLOv{7, 9}
+# YOLO: Official Implementation of YOLOv9, YOLOv7
 
 ![WIP](https://img.shields.io/badge/status-WIP-orange)
 > [!IMPORTANT]
 > This project is currently a Work In Progress and may undergo significant changes. It is not recommended for use in production environments until further notice. Please check back regularly for updates.
-> 
+>
 > Use of this code is at your own risk and discretion. It is advisable to consult with the project owner before deploying or integrating into any critical systems.
 
 Welcome to the official implementation of YOLOv7 and YOLOv9. This repository will contains the complete codebase, pre-trained models, and detailed instructions for training and deploying YOLOv9.
@@ -12,8 +12,8 @@ Welcome to the official implementation of YOLOv7 and YOLOv9. This repository wil
 - This is the official YOLO model implementation with an MIT License.
 - For quick deployment: you can enter directly in the terminal:
 ```shell
-$pip install git+https://github.com/WongKinYiu/yolov9mit.git
-$yolo task=inference task.source=0 # source could be a single file, video, image folder, webcam ID
+pip install git+git@github.com:WongKinYiu/YOLO.git
+yolo task=inference task.source=0 # source could be a single file, video, image folder, webcam ID
 ```
 
 ## Introduction
@@ -23,45 +23,60 @@ $yolo task=inference task.source=0 # source could be a single file, video, image
 ## Installation
 To get started with YOLOv9, clone this repository and install the required dependencies:
 ```shell
-git clone git@github.com:WongKinYiu/yolov9mit.git
-cd yolov9mit
+git clone git@github.com:WongKinYiu/YOLO.git
+cd YOLO
 pip install -r requirements.txt
 ```
 
 ## Features
-- [x] Autodownload weights/datasets
-- [x] Pip installable
-- [x] Support for devices:
-  - [x] CUDA
-  - [x] MPS (PyTorch 2.3+)
-  - [x] CPU
-- [x] Task:
-  - [x] Training
-  - [x] Inference
-  - [ ] Validation
+
+<table>
+<tr><td>
+
+| Features Supported | pip 🐍 | Hugging Face 🤗 | Docker 🐳 |
+| -------------------- | :----: | :--------------: | :-------: |
+| Compatibility       | ✅     | ❔               | 🧪        |
+
+| Processing Phase    | Training | Validation | Inference |
+| ------------------- | :------: | :---------: | :-------: |
+| Supported           | ✅       | ✅          | ✅        |
+
+</td><td>
+
+| Supporting Device | CUDA       | CPU       | MPS       |
+| ------------------ | :---------: | :-------: | :-------: |
+| PyTorch            | v1.12      | v2.3+     | v1.12     |
+| ONNX               | ✅         | ✅        | -         |
+| TensorRT           | 🧪         | 🧪        | -         |
+| OpenVINO           | -          | 🧪        | ❔        |
+
+</td></tr> </table>
+
+
 
 ## Task
-These are simple examples. For more customization details, please refer to [Notebooks](examples) and lower-level modifications **[HOWTO](docs/HOWTO)**.
+These are simple examples. For more customization details, please refer to [Notebooks](examples) and lower-level modifications **[HOWTO](docs/HOWTO.md)**.
 
 ## Training
-To train YOLOv9 on your dataset:
+To train YOLO on your dataset:
 
 1. Modify the configuration file `data/config.yaml` to point to your dataset.
 2. Run the training script:
 ```shell
-python lazy.py task=train task.batch_size=8 model=v9-c
+python yolo/lazy.py task=train task.data.batch_size=8 model=v9-c
 ```
 
 ### Transfer Learning
 To perform transfer learning with YOLOv9:
 ```shell
-python lazy.py task=train task.batch_size=8 model=v9-c task.data.dataset={dataset_config}
+python yolo/lazy.py task=train task.data.batch_size=8 model=v9-c dataset={dataset_config} device={cpu, mps, cuda}
 ```
 
 ### Inference
 To evaluate the model performance, use:
 ```shell
-python lazy.py weights=v9-c.pt # if cloned from GitHub
+python yolo/lazy.py task=inference weight=weights/v9-c.pt model=v9-c task.fast_inference=deploy # use deploy weight
+python yolo/lazy.py task=inference # if cloned from GitHub
 yolo task=inference task.data.source={Any} # if pip installed
 ```
 
@@ -75,12 +90,12 @@ To validate the model performance, use:
 Contributions to the YOLOv9 project are welcome! See [CONTRIBUTING](docs/CONTRIBUTING.md) for guidelines on how to contribute.
 
 ## Star History
-[![Star History Chart](https://api.star-history.com/svg?repos=WongKinYiu/yolov9mit&type=Date)](https://star-history.com/#WongKinYiu/yolov9mit&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=WongKinYiu/YOLO&type=Date)](https://star-history.com/#WongKinYiu/YOLO&Date)
 
 ## Citations
 ```
 @misc{wang2024yolov9,
-      title={YOLOv9: Learning What You Want to Learn Using Programmable Gradient Information}, 
+      title={YOLOv9: Learning What You Want to Learn Using Programmable Gradient Information},
       author={Chien-Yao Wang and I-Hau Yeh and Hong-Yuan Mark Liao},
       year={2024},
       eprint={2402.13616},

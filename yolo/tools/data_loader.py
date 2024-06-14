@@ -5,7 +5,6 @@ from threading import Event, Thread
 from typing import Generator, List, Tuple, Union
 
 import cv2
-import hydra
 import numpy as np
 import torch
 from loguru import logger
@@ -13,7 +12,7 @@ from PIL import Image
 from rich.progress import track
 from torch import Tensor
 from torch.utils.data import DataLoader, Dataset
-from torchvision.transforms import functional as TF
+from torch.utils.data.distributed import DistributedSampler
 
 from yolo.config.config import DataConfig, DatasetConfig
 from yolo.tools.data_augmentation import (
@@ -24,7 +23,6 @@ from yolo.tools.data_augmentation import (
     VerticalFlip,
 )
 from yolo.tools.dataset_preparation import prepare_dataset
-from yolo.tools.drawer import draw_bboxes
 from yolo.utils.dataset_utils import (
     create_image_metadata,
     locate_label_paths,
@@ -151,9 +149,7 @@ class YoloDataset(Dataset):
 
     def __getitem__(self, idx) -> Union[Image.Image, torch.Tensor]:
         img, bboxes = self.get_data(idx)
-        if self.transform:
-            img, bboxes = self.transform(img, bboxes)
-        img = TF.to_tensor(img)
+        img, bboxes = self.transform(img, bboxes)
         return img, bboxes
 
     def __len__(self) -> int:
@@ -161,14 +157,16 @@ class YoloDataset(Dataset):
 
 
 class YoloDataLoader(DataLoader):
-    def __init__(self, data_cfg: DataConfig, dataset_cfg: DatasetConfig, task: str = "train"):
+    def __init__(self, data_cfg: DataConfig, dataset_cfg: DatasetConfig, task: str = "train", use_ddp: bool = False):
         """Initializes the YoloDataLoader with hydra-config files."""
         dataset = YoloDataset(data_cfg, dataset_cfg, task)
+        sampler = DistributedSampler(dataset, shuffle=data_cfg.shuffle) if use_ddp else None
         self.image_size = data_cfg.image_size[0]
         super().__init__(
             dataset,
             batch_size=data_cfg.batch_size,
-            shuffle=data_cfg.shuffle,
+            sampler=sampler,
+            shuffle=data_cfg.shuffle and not use_ddp,
             num_workers=data_cfg.cpu_num,
             pin_memory=data_cfg.pin_memory,
             collate_fn=self.collate_fn,
@@ -202,14 +200,14 @@ class YoloDataLoader(DataLoader):
         return batch_images, batch_targets
 
 
-def create_dataloader(data_cfg: DataConfig, dataset_cfg: DatasetConfig, task: str = "train"):
+def create_dataloader(data_cfg: DataConfig, dataset_cfg: DatasetConfig, task: str = "train", use_ddp: bool = False):
     if task == "inference":
         return StreamDataLoader(data_cfg)
 
     if dataset_cfg.auto_download:
-        prepare_dataset(dataset_cfg)
+        prepare_dataset(dataset_cfg, task)
 
-    return YoloDataLoader(data_cfg, dataset_cfg, task)
+    return YoloDataLoader(data_cfg, dataset_cfg, task, use_ddp)
 
 
 class StreamDataLoader:
@@ -259,17 +257,12 @@ class StreamDataLoader:
             self.process_frame(frame)
         cap.release()
 
-    def cv2_to_tensor(self, frame: np.ndarray) -> Tensor:
-        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        frame_float = frame_rgb.astype("float32") / 255.0
-        return torch.from_numpy(frame_float).permute(2, 0, 1)[None]
-
     def process_frame(self, frame):
         if isinstance(frame, np.ndarray):
             frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             frame = Image.fromarray(frame)
         frame, _ = self.transform(frame, torch.zeros(0, 5))
-        frame = TF.to_tensor(frame)[None]
+        frame = frame[None]
         if not self.is_stream:
             self.queue.put(frame)
         else:
