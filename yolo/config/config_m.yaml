@@ -1,0 +1,14 @@
+hydra:
+  run:
+    dir: runs
+
+name: v9-m
+
+defaults:
+  - _self_
+  - task: train
+  - dataset: coco
+  - model: v9-m
+  - general
+
+weight: weights/v9-m.pt
